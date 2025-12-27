@@ -68,3 +68,20 @@ Run these from the project root:
 *   `servers/`: Configuration for upstream MCP servers.
 *   `presets/`: JSON files defining groups of enabled tools.
 *   `docs/`: Detailed documentation (`ARCHITECTURE.md`, `CONFIGURATION.md`).
+
+## MCP Tools (BTR)
+
+<!-- BTR_TOOLS_START -->
+**Last Updated:** 2025-12-27 UTC
+**Currently Enabled:** 12 tools
+
+| Server | Tools | Purpose |
+|--------|-------|---------|
+| **GitHub** | `create_issue`, `list_issues`, `issue_read`, `create_pull_request`, `list_pull_requests`, `pull_request_read`, `get_file_contents`, `create_or_update_file`, `push_files` | VCS operations for github.com/IMUR/mcp-btr |
+| **Perplexity** | `perplexity_ask`, `perplexity_reason`, `perplexity_research` | Research Python/FastAPI patterns, Docker, MCP protocol |
+
+**Why This Configuration:**
+- Tech stack: Python (FastAPI/Flask), Docker, MCP protocol implementation
+- VCS: GitHub (github.com/IMUR/mcp-btr)
+- Excluded: Gitea (wrong platform), Svelte/Ark-UI (no frontend frameworks), ElevenLabs (no audio), Mapbox (no geo)
+<!-- BTR_TOOLS_END -->

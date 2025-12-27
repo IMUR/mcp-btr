@@ -153,19 +153,20 @@ Tool state is stored in Docker volume `btr-data` at `/app/data/enabled_tools.jso
 ## MCP Tools (MCPJungle)
 
 <!-- MCP_TOOLS_START -->
-**Endpoint:** `http://localhost:8090/v0/groups/basic/mcp`
+**Endpoint:** `http://localhost:8090/mcp`
 **UI:** `http://localhost:5010`
-**Last Updated:** 2025-12-27 10:35 UTC
+**Last Updated:** 2025-12-27 UTC
 
-**Currently Enabled:** 3 tools
+**Currently Enabled:** 12 tools
 
 | Server | Tools | Purpose |
 |--------|-------|---------|
 | **Perplexity** | `perplexity_ask`, `perplexity_reason`, `perplexity_research` | Research MCP protocol, FastAPI patterns, Docker networking |
+| **GitHub** | `create_issue`, `list_issues`, `issue_read`, `create_pull_request`, `list_pull_requests`, `pull_request_read`, `get_file_contents`, `create_or_update_file`, `push_files` | Manage issues, PRs, and files on github.com/IMUR/mcp-btr |
 
 **Why This Configuration:**
-- Tech stack: Python (FastAPI/Flask), Docker
-- VCS: None (no git remote configured)
-- Excluded: GitHub/Gitea (no VCS), Svelte/Ark-UI (no frontend), ElevenLabs (no audio), Mapbox (no geo)
-- This is the BTR infrastructure project itself - minimal research tools only
+- Tech stack: Python (FastAPI/Flask), Docker, MCP protocol
+- VCS: GitHub (https://github.com/IMUR/mcp-btr.git)
+- Excluded: Gitea (wrong platform), Svelte/Ark-UI (no frontend frameworks), ElevenLabs (no audio), Mapbox (no geo)
+- Focus: Infrastructure development with GitHub collaboration and research capabilities
 <!-- MCP_TOOLS_END -->
