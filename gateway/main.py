@@ -4,6 +4,7 @@ Serves MCP tools over HTTP with SSE transport
 """
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -20,22 +21,83 @@ from router import router
 logging.basicConfig(level=getattr(logging, settings.log_level))
 logger = logging.getLogger(__name__)
 
+# Track startup time
+_startup_time: float = 0
+
+
+def validate_configuration() -> list[str]:
+    """
+    Validate configuration before startup.
+    Returns list of warning messages.
+    """
+    warnings = []
+
+    # Check servers directory
+    if not settings.servers_dir.exists():
+        warnings.append(f"Servers directory not found: {settings.servers_dir}")
+
+    # Check presets directory
+    if not settings.presets_dir.exists():
+        warnings.append(f"Presets directory not found: {settings.presets_dir}")
+
+    # Check data directory is writable
+    try:
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        test_file = settings.data_dir / ".write_test"
+        test_file.touch()
+        test_file.unlink()
+    except Exception as e:
+        warnings.append(f"Data directory not writable: {e}")
+
+    return warnings
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan - discover tools on startup"""
+    """Application lifespan - validate config and discover tools on startup"""
+    global _startup_time
+    _startup_time = time.time()
+
     logger.info("BTR Gateway starting...")
+    logger.info(f"Transport mode: {settings.transport_mode}")
+
+    # Validate configuration
+    warnings = validate_configuration()
+    for warning in warnings:
+        logger.warning(f"Configuration: {warning}")
+
+    # Discover tools from all servers
     await router.discover_tools()
-    logger.info(f"Discovered {len(router.all_tools)} tools from {len(router.servers)} servers")
+
+    # Report startup status
+    healthy_count = sum(1 for s in router.servers.values() if s.healthy)
+    total_count = len(router.servers)
+
+    logger.info(
+        f"Discovered {len(router.all_tools)} tools from "
+        f"{healthy_count}/{total_count} healthy servers"
+    )
     logger.info(f"Enabled tools: {len(tool_state.get_enabled())}")
+
+    if healthy_count == 0 and total_count > 0:
+        logger.warning(
+            "No healthy MCP servers! Check server configurations and "
+            "ensure containers are running (docker mode) or "
+            "commands are available (local mode)."
+        )
+
+    startup_duration = time.time() - _startup_time
+    logger.info(f"Gateway ready in {startup_duration:.2f}s")
+
     yield
+
     logger.info("BTR Gateway shutting down...")
 
 
 app = FastAPI(
     title="MCP-BTR Gateway",
     description="Budgeted Tool Router - Context-aware MCP tool aggregation",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan
 )
 
@@ -79,7 +141,7 @@ async def mcp_endpoint(request: Request):
                 },
                 "serverInfo": {
                     "name": "mcp-btr",
-                    "version": "0.1.0"
+                    "version": "0.2.0"
                 }
             }
 
@@ -268,12 +330,69 @@ async def load_preset(preset: PresetLoad):
 
 @app.get("/health")
 async def health():
-    """Health check endpoint"""
+    """
+    Enhanced health check endpoint.
+    Returns detailed status of all servers and tools.
+    """
+    # Calculate uptime
+    uptime = time.time() - _startup_time if _startup_time > 0 else 0
+
+    # Get server status
+    server_status = router.get_server_status()
+
+    # Determine overall health
+    healthy_servers = sum(1 for s in server_status.values() if s.get("healthy"))
+    total_servers = len(server_status)
+
+    if total_servers == 0:
+        overall_status = "degraded"
+    elif healthy_servers == total_servers:
+        overall_status = "healthy"
+    elif healthy_servers > 0:
+        overall_status = "degraded"
+    else:
+        overall_status = "unhealthy"
+
     return {
-        "status": "healthy",
-        "servers": len(router.servers),
-        "tools_available": len(router.all_tools),
-        "tools_enabled": len(tool_state.get_enabled())
+        "status": overall_status,
+        "version": "0.2.0",
+        "uptime_seconds": round(uptime, 2),
+        "transport_mode": settings.transport_mode,
+        "servers": server_status,
+        "tools": {
+            "available": len(router.all_tools),
+            "enabled": len(tool_state.get_enabled())
+        }
+    }
+
+
+@app.get("/api/status")
+async def get_status():
+    """
+    Detailed status endpoint for debugging and monitoring.
+    """
+    return {
+        "success": True,
+        "gateway": {
+            "version": "0.2.0",
+            "transport_mode": settings.transport_mode,
+            "uptime_seconds": round(time.time() - _startup_time, 2) if _startup_time > 0 else 0
+        },
+        "servers": router.get_server_status(),
+        "tools": {
+            "available": len(router.all_tools),
+            "enabled": len(tool_state.get_enabled()),
+            "by_server": {
+                name: len([t for t in router.all_tools.values() if t["server"] == name])
+                for name in router.servers
+            }
+        },
+        "config": {
+            "presets_dir": str(settings.presets_dir),
+            "servers_dir": str(settings.servers_dir),
+            "data_dir": str(settings.data_dir),
+            "default_preset": settings.default_preset
+        }
     }
 
 

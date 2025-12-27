@@ -4,7 +4,7 @@ BTR Gateway Configuration
 import os
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 from pydantic_settings import BaseSettings
 
 
@@ -23,6 +23,9 @@ class Settings(BaseSettings):
 
     # Default preset
     default_preset: str = "development"
+
+    # Transport mode: docker, local, http, or auto (tries in order)
+    transport_mode: Literal["docker", "local", "http", "auto"] = "auto"
 
     class Config:
         env_prefix = "BTR_"

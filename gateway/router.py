@@ -1,24 +1,34 @@
 """
 BTR Tool Router - Filters tools based on enabled state
+Supports multiple transport modes for MCP server communication
 """
 import json
-import asyncio
-import subprocess
+import logging
 from pathlib import Path
 from typing import Any, Optional
 from dataclasses import dataclass, field
 
 from config import settings, tool_state
+from transports import TransportMode, get_transport
+from transports.base import Transport, TransportError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class MCPServer:
-    """Represents a registered MCP server"""
+    """Represents a registered MCP server with multi-transport support"""
     name: str
     description: str
-    command: list[str]
-    env: dict[str, str] = field(default_factory=dict)
+    default_transport: str
+    transports: dict[str, dict] = field(default_factory=dict)
     tools: list[dict] = field(default_factory=list)
+    healthy: bool = False
+    active_transport: Optional[str] = None
+
+    # Legacy support
+    _legacy_command: Optional[list[str]] = None
+    _legacy_env: Optional[dict] = None
 
 
 class ToolRouter:
@@ -27,11 +37,13 @@ class ToolRouter:
     def __init__(self):
         self.servers: dict[str, MCPServer] = {}
         self.all_tools: dict[str, dict] = {}  # tool_name -> {server, schema}
+        self._transports: dict[str, Transport] = {}  # server_name -> active transport
         self._load_servers()
 
     def _load_servers(self):
         """Load MCP server configurations from servers/ directory"""
         if not settings.servers_dir.exists():
+            logger.warning(f"Servers directory not found: {settings.servers_dir}")
             return
 
         for server_dir in settings.servers_dir.iterdir():
@@ -46,16 +58,114 @@ class ToolRouter:
                 with open(config_file) as f:
                     config = json.load(f)
 
-                server = MCPServer(
-                    name=config["name"],
-                    description=config.get("description", ""),
-                    command=config["command"],
-                    env=config.get("env", {})
-                )
+                # Check for new multi-transport schema
+                if "transports" in config:
+                    server = MCPServer(
+                        name=config["name"],
+                        description=config.get("description", ""),
+                        default_transport=config.get("default_transport", "docker"),
+                        transports=config.get("transports", {})
+                    )
+                # Legacy schema support
+                elif "command" in config:
+                    server = MCPServer(
+                        name=config["name"],
+                        description=config.get("description", ""),
+                        default_transport="docker",
+                        transports={},
+                        _legacy_command=config.get("command"),
+                        _legacy_env=config.get("env", {})
+                    )
+                    logger.info(f"Using legacy config for {server.name}")
+                else:
+                    logger.warning(f"Invalid config for {server_dir.name}: missing transports or command")
+                    continue
+
                 self.servers[server.name] = server
+                logger.debug(f"Loaded server: {server.name}")
 
             except (json.JSONDecodeError, KeyError) as e:
-                print(f"Warning: Failed to load server config {config_file}: {e}")
+                logger.error(f"Failed to load server config {config_file}: {e}")
+
+    def _get_transport_mode(self) -> str:
+        """Get the effective transport mode from settings"""
+        return settings.transport_mode
+
+    def _select_transport(self, server: MCPServer) -> Optional[Transport]:
+        """
+        Select and create appropriate transport for a server.
+
+        Args:
+            server: MCPServer instance
+
+        Returns:
+            Transport instance or None if no transport available
+        """
+        mode = self._get_transport_mode()
+
+        # Legacy server support
+        if server._legacy_command:
+            # Detect if legacy command is docker-based
+            if server._legacy_command[:2] == ["docker", "exec"]:
+                # Extract container name and command
+                try:
+                    container_idx = server._legacy_command.index("-i") + 1
+                    container = server._legacy_command[container_idx]
+                    command = server._legacy_command[container_idx + 1:]
+                    config = {
+                        "container": container,
+                        "command": command,
+                        "env": server._legacy_env or {}
+                    }
+                    return get_transport(TransportMode.DOCKER, config)
+                except (ValueError, IndexError):
+                    logger.error(f"Could not parse legacy docker command for {server.name}")
+                    return None
+            else:
+                # Direct command
+                config = {
+                    "command": server._legacy_command,
+                    "env": server._legacy_env or {}
+                }
+                return get_transport(TransportMode.LOCAL, config)
+
+        # New multi-transport schema
+        if mode == "auto":
+            # Try transports in order: docker, local, http
+            for try_mode in ["docker", "local", "http"]:
+                if try_mode in server.transports:
+                    transport_config = server.transports[try_mode]
+                    try:
+                        transport = get_transport(TransportMode(try_mode), transport_config)
+                        server.active_transport = try_mode
+                        return transport
+                    except Exception as e:
+                        logger.debug(f"Transport {try_mode} not available for {server.name}: {e}")
+                        continue
+
+            # Fallback to default
+            if server.default_transport in server.transports:
+                transport_config = server.transports[server.default_transport]
+                transport = get_transport(
+                    TransportMode(server.default_transport),
+                    transport_config
+                )
+                server.active_transport = server.default_transport
+                return transport
+        else:
+            # Use specified mode
+            if mode in server.transports:
+                transport_config = server.transports[mode]
+                transport = get_transport(TransportMode(mode), transport_config)
+                server.active_transport = mode
+                return transport
+            else:
+                logger.warning(
+                    f"Transport mode '{mode}' not available for {server.name}. "
+                    f"Available: {list(server.transports.keys())}"
+                )
+
+        return None
 
     async def discover_tools(self) -> dict[str, list[dict]]:
         """Discover all tools from all registered servers"""
@@ -63,8 +173,27 @@ class ToolRouter:
 
         for name, server in self.servers.items():
             try:
-                tools = await self._get_server_tools(server)
+                transport = self._select_transport(server)
+                if not transport:
+                    logger.warning(f"No transport available for {name}")
+                    server.healthy = False
+                    tools_by_server[name] = []
+                    continue
+
+                self._transports[name] = transport
+
+                # Check availability
+                if not await transport.is_available():
+                    logger.warning(f"Transport not available for {name}")
+                    server.healthy = False
+                    tools_by_server[name] = []
+                    continue
+
+                # Discover tools
+                tools = await transport.get_tools()
                 tools_by_server[name] = tools
+                server.tools = tools
+                server.healthy = True
 
                 # Index tools for routing
                 for tool in tools:
@@ -75,44 +204,17 @@ class ToolRouter:
                         "schema": tool
                     }
 
+                logger.info(
+                    f"Discovered {len(tools)} tools from {name} "
+                    f"(transport: {server.active_transport})"
+                )
+
             except Exception as e:
-                print(f"Warning: Failed to discover tools from {name}: {e}")
+                logger.error(f"Failed to discover tools from {name}: {e}")
+                server.healthy = False
                 tools_by_server[name] = []
 
         return tools_by_server
-
-    async def _get_server_tools(self, server: MCPServer) -> list[dict]:
-        """Get tools from a specific MCP server via stdio"""
-        # Send tools/list request
-        request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list"
-        }
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *server.command,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env={**dict(os.environ), **server.env}
-            )
-
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(json.dumps(request).encode() + b"\n"),
-                timeout=30.0
-            )
-
-            response = json.loads(stdout.decode())
-            return response.get("result", {}).get("tools", [])
-
-        except asyncio.TimeoutError:
-            print(f"Timeout getting tools from {server.name}")
-            return []
-        except Exception as e:
-            print(f"Error getting tools from {server.name}: {e}")
-            return []
 
     def get_enabled_tools(self) -> list[dict]:
         """Get list of currently enabled tools with their schemas"""
@@ -145,46 +247,36 @@ class ToolRouter:
             raise ValueError(f"Tool not enabled: {tool_name}")
 
         tool_info = self.all_tools[tool_name]
-        server = self.servers[tool_info["server"]]
+        server_name = tool_info["server"]
 
-        # Send tools/call request
-        request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {
-                "name": tool_info["original_name"],
-                "arguments": arguments
-            }
-        }
+        if server_name not in self._transports:
+            raise ValueError(f"No transport available for server: {server_name}")
+
+        transport = self._transports[server_name]
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *server.command,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env={**dict(os.environ), **server.env}
+            result = await transport.call_tool(
+                tool_info["original_name"],
+                arguments
             )
+            return result
 
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(json.dumps(request).encode() + b"\n"),
-                timeout=60.0
-            )
+        except TransportError as e:
+            logger.error(f"Tool invocation failed for {tool_name}: {e}")
+            raise Exception(f"Tool call failed: {e}")
 
-            response = json.loads(stdout.decode())
+    def get_server_status(self) -> dict[str, dict]:
+        """Get health and transport status for all servers"""
+        status = {}
+        for name, server in self.servers.items():
+            status[name] = {
+                "healthy": server.healthy,
+                "transport": server.active_transport,
+                "tool_count": len(server.tools),
+                "available_transports": list(server.transports.keys())
+            }
+        return status
 
-            if "error" in response:
-                raise Exception(response["error"].get("message", "Unknown error"))
-
-            return response.get("result")
-
-        except asyncio.TimeoutError:
-            raise Exception(f"Timeout invoking {tool_name}")
-
-
-# Need to import os for environment handling
-import os
 
 # Global router instance
 router = ToolRouter()

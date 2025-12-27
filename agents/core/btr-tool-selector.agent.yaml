@@ -1,0 +1,188 @@
+# BTR Tool Selector - Universal Agent Definition
+# This platform-agnostic schema generates platform-specific agent configs
+
+apiVersion: btr/v1
+kind: Agent
+metadata:
+  name: btr-tool-selector
+  version: "1.0.0"
+  description: |
+    Analyzes project context and configures optimal MCP tools via the BTR API.
+    Detects tech stack, VCS platform, and project requirements to select
+    a minimal but sufficient toolset (15-30 tools).
+
+  triggers:
+    - "set up tools"
+    - "configure mcp tools"
+    - "analyze project tools"
+    - "I'm starting work on"
+    - "switching to project"
+
+spec:
+  # Environment configuration
+  config:
+    env_file: "~/.btr.env"
+    variables:
+      BTR_HOST:
+        default: "localhost"
+        description: "BTR gateway host"
+      BTR_UI_PORT:
+        default: "5010"
+        description: "BTR UI/API port"
+      BTR_GATEWAY_PORT:
+        default: "8090"
+        description: "BTR gateway port"
+
+  # Execution phases
+  phases:
+    - name: discover
+      description: "Query BTR API for available tools"
+      actions:
+        - type: api_call
+          method: GET
+          endpoint: "http://${BTR_HOST}:${BTR_UI_PORT}/api/tools"
+          output: available_tools
+
+    - name: analyze
+      description: "Examine project context"
+      actions:
+        - type: shell
+          command: "git remote -v 2>/dev/null | head -1"
+          output: git_remote
+          optional: true
+
+        - type: shell
+          command: "cat package.json 2>/dev/null"
+          output: package_json
+          optional: true
+
+        - type: shell
+          command: "cat pyproject.toml 2>/dev/null"
+          output: pyproject
+          optional: true
+
+        - type: shell
+          command: "cat go.mod 2>/dev/null"
+          output: go_mod
+          optional: true
+
+        - type: shell
+          command: "cat Cargo.toml 2>/dev/null"
+          output: cargo_toml
+          optional: true
+
+        - type: file_read
+          path: "CLAUDE.md"
+          output: claude_md
+          optional: true
+
+    - name: decide
+      description: "Select optimal toolset"
+      strategy: minimal_sufficiency
+      rules:
+        - name: vcs_detection
+          condition: "github.com in git_remote"
+          action: "enable github_* tools (max 12)"
+          exclusive_with: ["gitea_*"]
+
+        - name: vcs_detection_gitea
+          condition: "gitea or gitlab in git_remote"
+          action: "enable gitea_* tools (max 12)"
+          exclusive_with: ["github_*"]
+
+        - name: research_tools
+          condition: "always"
+          action: "enable perplexity_* tools (all 3)"
+
+        - name: framework_svelte
+          condition: "@sveltejs in package_json"
+          action: "enable svelte_* tools"
+
+        - name: framework_react
+          condition: "react in package_json"
+          action: "enable react_* tools"
+
+      budget:
+        minimum: 5
+        optimal: 15-30
+        maximum: 40
+        justify_over: 30
+
+    - name: execute
+      description: "Apply tool configuration"
+      actions:
+        - type: api_call
+          method: POST
+          endpoint: "http://${BTR_HOST}:${BTR_UI_PORT}/api/update"
+          body:
+            tools: "{{ selected_tools }}"
+
+    - name: verify
+      description: "Confirm configuration applied"
+      actions:
+        - type: api_call
+          method: GET
+          endpoint: "http://${BTR_HOST}:${BTR_UI_PORT}/api/current"
+          output: current_tools
+          validate: "current_tools.count > 0"
+
+    - name: document
+      description: "Update project documentation"
+      actions:
+        - type: file_update
+          files:
+            - "CLAUDE.md"
+            - "GEMINI.md"
+            - "AGENTS.md"
+          section:
+            marker_start: "<!-- BTR_TOOLS_START -->"
+            marker_end: "<!-- BTR_TOOLS_END -->"
+          template: |
+            ## MCP Tools (BTR)
+
+            <!-- BTR_TOOLS_START -->
+            **Last Updated:** {{ timestamp }}
+            **Currently Enabled:** {{ tool_count }} tools
+
+            | Server | Tools | Purpose |
+            |--------|-------|---------|
+            {{ tool_table }}
+
+            **Configuration Rationale:**
+            - Tech stack: {{ detected_stack }}
+            - VCS: {{ vcs_platform }}
+            - Excluded: {{ excluded_reason }}
+            <!-- BTR_TOOLS_END -->
+
+    - name: report
+      description: "Summarize to user"
+      template: |
+        Configured {{ tool_count }} tools:
+        {{ tool_summary }}
+
+        Excluded: {{ excluded_summary }}
+
+  # Platform-specific rendering
+  platforms:
+    claude_code:
+      format: markdown_frontmatter
+      model: sonnet
+      color: blue
+      install_path: "~/.claude/agents/"
+
+    cursor:
+      format: cursor_rules
+      install_path: "~/.cursor/rules/"
+
+    gemini:
+      format: gemini_agent
+      model: gemini-pro
+      install_path: "~/.gemini/agents/"
+
+    openai:
+      format: function_definitions
+      install_path: "~/.openai/functions/"
+
+    generic:
+      format: bash_script
+      install_path: "~/.btr/scripts/"

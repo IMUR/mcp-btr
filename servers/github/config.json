@@ -1,8 +1,26 @@
 {
   "name": "github",
   "description": "GitHub repository operations - issues, PRs, code search, file management",
-  "command": ["docker", "exec", "-i", "github-mcp", "/app/github-mcp-server"],
-  "env": {
-    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+  "default_transport": "docker",
+  "transports": {
+    "docker": {
+      "container": "github-mcp",
+      "command": ["/app/github-mcp-server"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "local": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  },
+  "_legacy": {
+    "command": ["docker", "exec", "-i", "github-mcp", "/app/github-mcp-server"],
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+    }
   }
 }

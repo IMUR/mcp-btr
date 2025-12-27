@@ -1,0 +1,92 @@
+# Docker Compose for Standalone Mode
+# Runs only BTR services (gateway + UI) without MCP server containers
+# MCP servers run locally via npx, python -m, etc.
+#
+# Usage:
+#   docker compose -f docker-compose.standalone.yml up -d
+#
+# Prerequisites:
+#   - Node.js (for npx-based MCP servers)
+#   - Python (for python-based MCP servers)
+#   - API keys in .env file
+
+version: "3.8"
+
+services:
+  # =============================================================================
+  # BTR Gateway - Main MCP aggregation service (standalone mode)
+  # =============================================================================
+  gateway:
+    build: ./gateway
+    container_name: btr-gateway
+    ports:
+      - "${BTR_GATEWAY_PORT:-8090}:8090"
+    environment:
+      - BTR_HOST=0.0.0.0
+      - BTR_PORT=8090
+      - BTR_DEFAULT_PRESET=${BTR_DEFAULT_PRESET:-development}
+      - BTR_TRANSPORT_MODE=local
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Pass through API keys for local MCP servers
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - GITEA_TOKEN=${GITEA_TOKEN:-}
+      - GITEA_HOST=${GITEA_HOST:-}
+    volumes:
+      - ./presets:/app/presets:ro
+      - ./servers:/app/servers:ro
+      - btr-data:/app/data
+      # No docker.sock mount needed in standalone mode
+    networks:
+      - btr-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # =============================================================================
+  # BTR Tool Selector UI
+  # =============================================================================
+  ui:
+    build: ./ui
+    container_name: btr-ui
+    ports:
+      - "${BTR_UI_PORT:-5010}:5010"
+    environment:
+      - BTR_GATEWAY_URL=http://gateway:8090
+      - BTR_UI_PORT=5010
+    depends_on:
+      - gateway
+    networks:
+      - btr-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # =============================================================================
+  # No MCP server containers - they run locally on the host
+  # =============================================================================
+  # To use MCP servers in standalone mode:
+  #
+  # GitHub MCP (requires Node.js):
+  #   npx -y @modelcontextprotocol/server-github
+  #
+  # Perplexity MCP (requires Python):
+  #   pip install perplexity-mcp
+  #   python -m perplexity_mcp
+  #
+  # The gateway will spawn these processes as needed when
+  # BTR_TRANSPORT_MODE=local
+
+networks:
+  btr-network:
+    driver: bridge
+
+volumes:
+  btr-data:
+    driver: local

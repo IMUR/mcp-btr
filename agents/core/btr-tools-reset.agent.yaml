@@ -1,0 +1,108 @@
+# BTR Tools Reset - Universal Agent Definition
+# Resets all MCP tools to disabled state
+
+apiVersion: btr/v1
+kind: Agent
+metadata:
+  name: btr-tools-reset
+  version: "1.0.0"
+  description: |
+    Disables all MCP tools and clears the BTR configuration.
+    Use before switching to a very different project or when
+    tool selection has become cluttered.
+
+  triggers:
+    - "reset mcp tools"
+    - "clear all tools"
+    - "disable all mcp tools"
+    - "clean slate"
+    - "start fresh"
+
+spec:
+  config:
+    env_file: "~/.btr.env"
+    variables:
+      BTR_HOST:
+        default: "localhost"
+      BTR_UI_PORT:
+        default: "5010"
+
+  phases:
+    - name: confirm
+      description: "Verify user intent"
+      actions:
+        - type: prompt
+          message: "This will disable all MCP tools. Continue?"
+          default: true
+
+    - name: execute
+      description: "Disable all tools"
+      actions:
+        - type: api_call
+          method: POST
+          endpoint: "http://${BTR_HOST}:${BTR_UI_PORT}/api/update"
+          body:
+            tools: []
+
+    - name: verify
+      description: "Confirm reset"
+      actions:
+        - type: api_call
+          method: GET
+          endpoint: "http://${BTR_HOST}:${BTR_UI_PORT}/api/current"
+          output: current_tools
+          validate: "current_tools.count == 0"
+
+    - name: document
+      description: "Update documentation to reflect reset state"
+      actions:
+        - type: file_update
+          files:
+            - "CLAUDE.md"
+            - "GEMINI.md"
+            - "AGENTS.md"
+          section:
+            marker_start: "<!-- BTR_TOOLS_START -->"
+            marker_end: "<!-- BTR_TOOLS_END -->"
+          template: |
+            ## MCP Tools (BTR)
+
+            <!-- BTR_TOOLS_START -->
+            **Last Updated:** {{ timestamp }}
+            **Currently Enabled:** 0 tools
+
+            No tools currently enabled. Run the tool selector agent to configure tools for your project.
+            <!-- BTR_TOOLS_END -->
+
+    - name: report
+      description: "Summarize reset"
+      template: |
+        All MCP tools have been disabled.
+
+        To reconfigure tools for your project:
+        - Use the btr-tool-selector agent
+        - Or visit the Tool Selector UI at http://{{ BTR_HOST }}:{{ BTR_UI_PORT }}
+
+  platforms:
+    claude_code:
+      format: markdown_frontmatter
+      model: haiku
+      color: red
+      install_path: "~/.claude/agents/"
+
+    cursor:
+      format: cursor_rules
+      install_path: "~/.cursor/rules/"
+
+    gemini:
+      format: gemini_agent
+      model: gemini-flash
+      install_path: "~/.gemini/agents/"
+
+    openai:
+      format: function_definitions
+      install_path: "~/.openai/functions/"
+
+    generic:
+      format: bash_script
+      install_path: "~/.btr/scripts/"

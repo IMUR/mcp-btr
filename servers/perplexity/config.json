@@ -1,8 +1,26 @@
 {
   "name": "perplexity",
   "description": "AI-powered web search and research",
-  "command": ["docker", "exec", "-i", "perplexity-mcp", "python", "-m", "perplexity_mcp"],
-  "env": {
-    "PERPLEXITY_API_KEY": "${PERPLEXITY_API_KEY}"
+  "default_transport": "docker",
+  "transports": {
+    "docker": {
+      "container": "perplexity-mcp",
+      "command": ["python", "-m", "perplexity_mcp"],
+      "env": {
+        "PERPLEXITY_API_KEY": "${PERPLEXITY_API_KEY}"
+      }
+    },
+    "local": {
+      "command": ["python", "-m", "perplexity_mcp"],
+      "env": {
+        "PERPLEXITY_API_KEY": "${PERPLEXITY_API_KEY}"
+      }
+    }
+  },
+  "_legacy": {
+    "command": ["docker", "exec", "-i", "perplexity-mcp", "python", "-m", "perplexity_mcp"],
+    "env": {
+      "PERPLEXITY_API_KEY": "${PERPLEXITY_API_KEY}"
+    }
   }
 }
