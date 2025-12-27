@@ -43,6 +43,8 @@ MCP-BTR is a **budgeted tool router** that:
 
 ## Quick Start
 
+### Docker Mode (Recommended)
+
 ```bash
 # Clone and setup
 git clone https://github.com/IMUR/mcp-btr
@@ -56,7 +58,18 @@ cp .env.example .env
 # Result:
 # ✅ BTR Gateway at http://localhost:8090
 # ✅ Tool Selector UI at http://localhost:5010
-# ✅ AI agents installed to ~/.claude/agents/
+# ✅ AI agents installed to all detected platforms
+```
+
+### Standalone Mode (No Docker for MCP servers)
+
+```bash
+# Use standalone compose (MCP servers run locally via npx/python)
+docker compose -f docker-compose.standalone.yml up -d
+
+# Or set transport mode
+export BTR_TRANSPORT_MODE=local
+docker compose up -d
 ```
 
 **Configure your AI client:**
@@ -93,6 +106,8 @@ The `btr-tool-selector` agent analyzes your project context:
 - Reads `CLAUDE.md` for explicit tool requirements
 - Configures optimal tool budget automatically
 
+**Multi-Platform Support:** Agents work across Claude Code, Cursor, Gemini, and OpenAI.
+
 ### Manual Control
 
 The Tool Selector UI provides:
@@ -107,10 +122,14 @@ The Tool Selector UI provides:
 ```
 mcp-btr/
 ├── gateway/          # BTR Gateway (FastAPI)
+│   └── transports/   # Multi-transport support (docker, local, http)
 ├── ui/               # Tool Selector (Flask)
 ├── agents/           # AI Selection Agents
+│   ├── core/         # Universal agent definitions (YAML)
+│   └── platforms/    # Platform-specific generators
 ├── servers/          # MCP Server definitions
 ├── presets/          # Tool budget presets
+├── cli/              # CLI utilities
 └── docs/             # Documentation
 ```
 
@@ -125,8 +144,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed design.
 
 ## Requirements
 
-- Docker & Docker Compose
-- (Optional) Claude Code or Gemini CLI for AI agents
+- Docker & Docker Compose (or standalone mode with Node.js/Python)
+- (Optional) Claude Code, Cursor, Gemini, or OpenAI CLI for AI agents
 
 ## License
 

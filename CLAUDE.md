@@ -12,6 +12,9 @@ MCP-BTR (Budgeted Tool Router) aggregates multiple MCP servers behind a single H
 # Start all services (Gateway + UI + MCP servers)
 make start           # or: docker compose up -d
 
+# Standalone mode (MCP servers run locally, not in Docker)
+docker compose -f docker-compose.standalone.yml up -d
+
 # Stop services
 make stop            # or: docker compose down
 
@@ -26,7 +29,7 @@ make build           # or: docker compose build
 # Reset to default preset
 make reset
 
-# Install AI agents to ~/.claude/agents/
+# Install AI agents to all detected platforms
 make install-agents  # or: ./agents/install.sh
 
 # Full cleanup (removes volumes)
@@ -34,6 +37,9 @@ make clean
 
 # Check service status
 make status
+
+# Check port availability
+python cli/port_checker.py
 ```
 
 ## Architecture
@@ -60,10 +66,27 @@ make status
 
 **Key Components:**
 - `gateway/` - FastAPI service that handles MCP protocol and tool routing
+  - `gateway/transports/` - Multi-transport support (docker, local, http)
 - `ui/` - Flask web interface for manual tool selection
 - `agents/` - AI agent definitions for automated tool selection
+  - `agents/core/` - Universal agent schemas (YAML)
+  - `agents/platforms/` - Platform-specific generators
 - `servers/` - MCP server config files (one dir per server with `config.json`)
 - `presets/` - JSON tool budget presets (minimal, development, research, full)
+- `cli/` - CLI utilities (port checker, etc.)
+
+## Transport Modes
+
+BTR supports multiple transport modes for MCP server communication:
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `docker` | docker exec into containers | Production (default) |
+| `local` | Direct subprocess (npx, python -m) | Development, standalone |
+| `http` | HTTP-based MCP servers | Remote servers |
+| `auto` | Try docker, then local, then http | Flexible |
+
+Set via `BTR_TRANSPORT_MODE` environment variable.
 
 ## Tool Naming Convention
 
@@ -91,19 +114,27 @@ Examples:
 
 ## Adding New MCP Servers
 
-1. Create `servers/{name}/config.json`:
+1. Create `servers/{name}/config.json` with multi-transport support:
 ```json
 {
   "name": "myserver",
   "description": "My MCP server",
-  "command": ["docker", "exec", "-i", "myserver-container", "/app/server"],
-  "env": {
-    "API_KEY": "${MYSERVER_API_KEY}"
+  "default_transport": "docker",
+  "transports": {
+    "docker": {
+      "container": "myserver-mcp",
+      "command": ["/app/server"],
+      "env": {"API_KEY": "${MYSERVER_API_KEY}"}
+    },
+    "local": {
+      "command": ["npx", "-y", "@example/mcp-server"],
+      "env": {"API_KEY": "${MYSERVER_API_KEY}"}
+    }
   }
 }
 ```
 
-2. Add container to `docker-compose.yml` on `btr-network`
+2. Add container to `docker-compose.yml` on `btr-network` (for docker transport)
 3. Add API key to `.env`
 4. Restart: `docker compose down && docker compose up -d`
 
@@ -112,7 +143,12 @@ Examples:
 - `gateway/main.py` - FastAPI app with MCP and management endpoints
 - `gateway/router.py` - ToolRouter class: discovers tools, filters by enabled, routes calls
 - `gateway/config.py` - Settings and ToolState persistence
+- `gateway/transports/` - Transport implementations (docker, stdio, http)
+- `gateway/errors.py` - User-friendly error messages with troubleshooting hints
 - `ui/app.py` - Flask app that proxies to Gateway API
+- `agents/core/*.agent.yaml` - Universal agent definitions
+- `agents/generator.py` - Platform-specific agent generator
+- `agents/installer.py` - Multi-platform agent installer
 
 ## Environment Variables
 
@@ -124,6 +160,7 @@ Optional:
 - `BTR_GATEWAY_PORT` (default: 8090)
 - `BTR_UI_PORT` (default: 5010)
 - `BTR_DEFAULT_PRESET` (default: development)
+- `BTR_TRANSPORT_MODE` (default: auto) - docker, local, http, or auto
 - `LOG_LEVEL` (default: INFO)
 
 ## Testing APIs
