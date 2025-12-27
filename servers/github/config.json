@@ -1,0 +1,8 @@
+{
+  "name": "github",
+  "description": "GitHub repository operations - issues, PRs, code search, file management",
+  "command": ["docker", "exec", "-i", "github-mcp", "/app/github-mcp-server"],
+  "env": {
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+  }
+}

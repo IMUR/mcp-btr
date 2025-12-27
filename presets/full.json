@@ -1,0 +1,28 @@
+{
+  "name": "full",
+  "description": "All available tools - use when you need everything",
+  "tools": [
+    "github__search_code",
+    "github__search_repositories",
+    "github__search_users",
+    "github__get_file_contents",
+    "github__create_or_update_file",
+    "github__push_files",
+    "github__create_pull_request",
+    "github__get_pull_request",
+    "github__list_pull_requests",
+    "github__merge_pull_request",
+    "github__create_issue",
+    "github__get_issue",
+    "github__list_issues",
+    "github__update_issue",
+    "github__create_branch",
+    "github__list_branches",
+    "github__get_commit",
+    "github__list_commits",
+    "github__get_me",
+    "perplexity__perplexity_ask",
+    "perplexity__perplexity_reason",
+    "perplexity__perplexity_research"
+  ]
+}

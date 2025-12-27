@@ -1,0 +1,9 @@
+{
+  "name": "research",
+  "description": "Research-focused toolset - Perplexity for web search and analysis",
+  "tools": [
+    "perplexity__perplexity_ask",
+    "perplexity__perplexity_reason",
+    "perplexity__perplexity_research"
+  ]
+}

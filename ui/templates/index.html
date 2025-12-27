@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP-BTR Tool Selector</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MCP-BTR Tool Selector</h1>
+            <p class="subtitle">Budgeted Tool Router - Select which MCP tools are available to AI clients</p>
+        </header>
+
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-value" id="enabled-count">0</span>
+                <span class="stat-label">Enabled</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="total-count">0</span>
+                <span class="stat-label">Available</span>
+            </div>
+            <div class="stat budget-indicator">
+                <span class="stat-value" id="budget-status">OK</span>
+                <span class="stat-label">Budget</span>
+            </div>
+        </div>
+
+        <div class="actions-bar">
+            <div class="preset-selector">
+                <label for="preset-select">Presets:</label>
+                <select id="preset-select">
+                    <option value="">Select preset...</option>
+                </select>
+                <button id="load-preset-btn" class="btn btn-primary">Load</button>
+            </div>
+            <div class="quick-actions">
+                <button id="select-none-btn" class="btn btn-secondary">Disable All</button>
+                <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
+            </div>
+        </div>
+
+        <div id="tools-container">
+            <p class="loading">Loading tools...</p>
+        </div>
+
+        <footer>
+            <p>MCP-BTR Gateway: <code id="gateway-url">http://localhost:8090/mcp</code></p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

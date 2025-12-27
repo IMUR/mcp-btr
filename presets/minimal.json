@@ -1,0 +1,9 @@
+{
+  "name": "minimal",
+  "description": "Minimal toolset for quick tasks - just search and research",
+  "tools": [
+    "github__search_code",
+    "github__get_file_contents",
+    "perplexity__perplexity_ask"
+  ]
+}
